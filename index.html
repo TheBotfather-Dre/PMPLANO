@@ -52,7 +52,7 @@ input,button,textarea{font-family:inherit;}
 .bottom-bar button{width:100%;}
 
 /* STATS - 5 columns now */
-.stats-bar{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;padding:10px 12px;background:var(--bg);border-bottom:1px solid var(--border);}
+.stats-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:10px 12px;background:var(--bg);border-bottom:1px solid var(--border);}
 .stat{background:var(--surface);border-radius:8px;padding:8px 4px;text-align:center;}
 .stat-n{font-size:17px;font-weight:700;line-height:1;}
 .stat-l{font-size:9px;color:var(--muted);margin-top:2px;}
@@ -170,7 +170,6 @@ nav button.active{color:var(--text);border-bottom-color:var(--accent);}
     <div class="stat"><div class="stat-n n-info" id="s-total">0</div><div class="stat-l">expected</div></div>
     <div class="stat"><div class="stat-n n-ok" id="s-ok">0</div><div class="stat-l">OK</div></div>
     <div class="stat"><div class="stat-n n-miss" id="s-miss">0</div><div class="stat-l">missing</div></div>
-    <div class="stat"><div class="stat-n n-short" id="s-short">0</div><div class="stat-l">short</div></div>
     <div class="stat"><div class="stat-n n-extra" id="s-extra">0</div><div class="stat-l">extra</div></div>
   </div>
   <nav>
@@ -182,7 +181,6 @@ nav button.active{color:var(--text);border-bottom-color:var(--accent);}
       <div class="chip active" onclick="setFilter('all',this)">All</div>
       <div class="chip chip-ok" onclick="setFilter('ok',this)">OK</div>
       <div class="chip chip-miss" onclick="setFilter('missing',this)">Missing</div>
-      <div class="chip chip-short" onclick="setFilter('short',this)">Short</div>
       <div class="chip chip-extra" onclick="setFilter('extra',this)">Extra</div>
     </div>
     <div id="pl-list"></div>
@@ -300,16 +298,16 @@ function calcStats(o){
   const cmap=getCounts(o);
   const mmap=getMasterCounts(o);
   let totalExp=o.items.reduce((s,r)=>s+r.qty,0);
-  let ok=0,missing=0,short=0,extra=0;
+  let ok=0,missing=0,extra=0;
   o.items.forEach(r=>{
     const have=cmap[key(r.sku,r.cs)]||0;
     const st=itemStatus(r,cmap);
     if(st==='ok') ok+=r.qty;
     else if(st==='missing') missing+=r.qty;
-    else if(st==='short'){ ok+=have; short+=(r.qty-have); }
+    else if(st==='short'){ ok+=have; missing+=(r.qty-have); }
   });
   o.counted.forEach(r=>{ if(!mmap[key(r.sku,r.cs)]) extra+=r.qty; });
-  return {totalExp,ok,missing,short,extra};
+  return {totalExp,ok,missing,extra};
 }
 
 /* HOME */
@@ -320,10 +318,10 @@ function renderHome(){
   if(!ids.length){list.innerHTML='<div class="empty">No orders yet.</div>';return;}
   list.innerHTML=ids.map(id=>{
     const o=state.orders[id];
-    const {totalExp,ok,missing,short,extra}=calcStats(o);
-    const allOk=missing===0&&short===0&&extra===0&&ok>=totalExp;
-    const bc=allOk?'b-ok':missing>0||short>0?'b-miss':'b-short';
-    const bt=allOk?'Complete':missing>0?`${missing} missing`:short>0?`${short} short`:'In progress';
+    const {totalExp,ok,missing,extra}=calcStats(o);
+    const allOk=missing===0&&extra===0&&ok>=totalExp;
+    const bc=allOk?'b-ok':missing>0?'b-miss':'b-short';
+    const bt=allOk?'Complete':missing>0?`${missing} missing`:'In progress';
     let counted=0; o.counted.forEach(r=>counted+=r.qty);
     return `<div class="order-card" onclick="openOrder('${id}')">
       <div>
@@ -475,11 +473,10 @@ function renderCounted(){
 function updateStats(){
   if(!currentOrder) return;
   const o=state.orders[currentOrder];
-  const {totalExp,ok,missing,short,extra}=calcStats(o);
+  const {totalExp,ok,missing,extra}=calcStats(o);
   document.getElementById('s-total').textContent=totalExp;
   document.getElementById('s-ok').textContent=ok;
   document.getElementById('s-miss').textContent=missing;
-  document.getElementById('s-short').textContent=short;
   document.getElementById('s-extra').textContent=extra;
 }
 

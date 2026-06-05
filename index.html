@@ -434,7 +434,7 @@ function renderPackList(){
     const have=cmap[key(r.sku,r.cs)]||0;
     const st=itemStatus(r,cmap);
     const bc=st==='ok'?'b-ok':st==='missing'?'b-miss':'b-short';
-    const bt=st==='ok'?'OK':st==='missing'?'MISSING':`SHORT ${have}/${r.qty}`;
+    const bt=st==='ok'?'OK':st==='missing'?'MISSING':`SHORT ${r.qty-have}/${r.qty}`;
     return `<div class="list-item">
       <div class="li-left">
         <div class="li-sku">${r.sku}</div>

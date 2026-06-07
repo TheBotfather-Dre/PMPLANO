@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="Inventory">
 <title>Inventory</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/zxing-wasm@1.2.6/dist/full/zxing-full.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
 :root{
@@ -164,11 +164,13 @@ nav button.active{color:var(--text);border-bottom-color:var(--accent);}
   </div>
 </div>
 
-<!-- SCANNER OVERLAY -->
+<!-- SCANNER OVERLAY - Native camera barcode -->
 <div id="scanner-overlay">
   <div id="scanner-wrap">
-    <div id="scan-feedback"></div>
+    <video id="scan-video" autoplay playsinline muted></video>
+    <canvas id="scan-canvas" style="display:none;"></canvas>
     <div class="scan-aim"></div>
+    <div id="scan-feedback"></div>
   </div>
   <div class="scan-status" id="scan-status">Point camera at barcode</div>
   <div class="scan-close"><button onclick="closeScanner()">Cancel</button></div>
@@ -249,6 +251,7 @@ nav button.active{color:var(--text);border-bottom-color:var(--accent);}
       </div>
       <div class="entry-row">
         <button class="scan-btn" onclick="openScanner()">&#9641; Scan</button>
+        <input type="file" id="native-scan-input" accept="image/*" capture="environment" style="display:none;" onchange="handleNativeScan(event)"/>
         <button class="add-btn" style="flex:1;" onclick="addCounted()">+ Add</button>
         <button style="background:none;color:var(--warn);border:1px solid #3a2000;border-radius:8px;padding:10px 12px;font-size:13px;cursor:pointer;" onclick="resetCounted()">Reset</button>
         <button style="background:none;color:var(--danger);border:1px solid #3a1a1a;border-radius:8px;padding:10px 10px;font-size:13px;cursor:pointer;" onclick="clearCounted()">Clear</button>
@@ -268,8 +271,6 @@ const DB='inv_app_v3';
 let state={orders:{}};
 let currentOrder=null;
 let activeFilter='all';
-let scannerRunning=false;
-let scanCooldown=false;
 let pendingExtra=null; // holds item waiting for acknowledgement
 
 function norm(s){ return String(s||'').toUpperCase().replace(/[^A-Z0-9\/]/g,' ').replace(/\s+/g,' ').trim(); }
@@ -646,39 +647,111 @@ function clearCounted(){
   if(confirm('Clear all counted items?')){ state.orders[currentOrder].counted=[]; saveState(); renderDetail(); }
 }
 
-/* SCANNER */
-function openScanner(){
-  document.getElementById('scanner-overlay').classList.add('open');
-  document.getElementById('scan-status').textContent='Starting camera...';
-  scannerRunning=true; scanCooldown=false;
-  Quagga.init({
-    inputStream:{type:'LiveStream',target:document.getElementById('scanner-wrap'),constraints:{facingMode:'environment',width:{min:640},height:{min:480}}},
-    locator:{patchSize:'medium',halfSample:true},
-    numOfWorkers:2,
-    decoder:{readers:['code_128_reader','ean_reader','code_39_reader','upc_reader','interleaved_2of5_reader']},
-    locate:true
-  },function(err){
-    if(err){document.getElementById('scan-status').textContent='Camera error — type manually';return;}
-    Quagga.start();
-    document.getElementById('scan-status').textContent='Point camera at barcode';
-  });
-  Quagga.onDetected(function(result){
-    if(!scanCooldown&&result.codeResult&&result.codeResult.code){
-      scanCooldown=true;
-      const code=result.codeResult.code;
-      document.getElementById('scan-feedback').style.display='block';
-      setTimeout(()=>document.getElementById('scan-feedback').style.display='none',300);
-      document.getElementById('scan-status').textContent='Scanned: '+code;
-      closeScanner();
-      showTab('count');
-      document.getElementById('i-article').value=code;
-      addCounted(code);
-      setTimeout(()=>scanCooldown=false,2000);
+/* SCANNER - uses native camera on iPhone */
+let scanStream=null;
+let scanAnimFrame=null;
+let zxingReader=null;
+
+async function initZxing(){
+  if(zxingReader) return zxingReader;
+  try{
+    // Use ZXing WASM if available
+    if(window.ZXing){
+      const hints=new window.ZXing.DecodeHints();
+      zxingReader=new window.ZXing.BarcodeReader();
+      return zxingReader;
     }
+  }catch(e){}
+  return null;
+}
+
+function openScanner(){
+  // On iPhone Safari, use native camera file input — most reliable
+  const isIOS=/iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if(isIOS){
+    document.getElementById('native-scan-input').click();
+    return;
+  }
+  // Desktop/Android: use live camera stream
+  openLiveScanner();
+}
+
+function handleNativeScan(e){
+  const file=e.target.files[0];
+  if(!file) return;
+  showToast('Processing image...');
+  const img=new Image();
+  const url=URL.createObjectURL(file);
+  img.onload=function(){
+    const canvas=document.createElement('canvas');
+    canvas.width=img.width; canvas.height=img.height;
+    const ctx=canvas.getContext('2d');
+    ctx.drawImage(img,0,0);
+    URL.revokeObjectURL(url);
+    // Try ZXing WASM decode
+    tryZxingDecode(canvas,ctx,img.width,img.height);
+  };
+  img.src=url;
+  // reset input so same image can be used again
+  e.target.value='';
+}
+
+async function tryZxingDecode(canvas,ctx,w,h){
+  try{
+    if(window.ZXingWasm){
+      const imageData=ctx.getImageData(0,0,w,h);
+      const result=await window.ZXingWasm.readBarcodesFromImageData(imageData,{});
+      if(result&&result.length&&result[0].text){
+        onBarcodeFound(result[0].text);
+        return;
+      }
+    }
+  }catch(e){}
+  // Fallback: ask user to type it
+  showToast('Could not read barcode — please type article number manually');
+  document.getElementById('i-article').focus();
+}
+
+function openLiveScanner(){
+  const overlay=document.getElementById('scanner-overlay');
+  overlay.classList.add('open');
+  document.getElementById('scan-status').textContent='Starting camera...';
+  const video=document.getElementById('scan-video');
+  navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1280},height:{ideal:720}}})
+    .then(stream=>{
+      scanStream=stream;
+      video.srcObject=stream;
+      video.play();
+      document.getElementById('scan-status').textContent='Point camera at barcode';
+      scanLoop();
+    })
+    .catch(err=>{
+      document.getElementById('scan-status').textContent='Camera unavailable — type manually';
+    });
+}
+
+function scanLoop(){
+  const video=document.getElementById('scan-video');
+  const canvas=document.getElementById('scan-canvas');
+  if(!scanStream||video.readyState<2){ scanAnimFrame=requestAnimationFrame(scanLoop); return; }
+  canvas.width=video.videoWidth; canvas.height=video.videoHeight;
+  const ctx=canvas.getContext('2d');
+  ctx.drawImage(video,0,0);
+  tryZxingDecode(canvas,ctx,canvas.width,canvas.height).then(()=>{
+    if(scanStream) scanAnimFrame=requestAnimationFrame(scanLoop);
   });
 }
+
+function onBarcodeFound(code){
+  closeScanner();
+  showTab('count');
+  document.getElementById('i-article').value=code;
+  addCounted(code);
+}
+
 function closeScanner(){
-  if(scannerRunning){try{Quagga.stop();}catch(e){} scannerRunning=false;}
+  if(scanStream){ scanStream.getTracks().forEach(t=>t.stop()); scanStream=null; }
+  if(scanAnimFrame){ cancelAnimationFrame(scanAnimFrame); scanAnimFrame=null; }
   document.getElementById('scanner-overlay').classList.remove('open');
 }
 

@@ -257,9 +257,22 @@ function key(sku,cs){return norm(sku)+'|'+norm(cs);}
 function cleanArticle(a){return String(a||'').replace(/\s/g,'').trim();}
 
 function findByArticle(o,article){
-  const a=cleanArticle(article);
-  if(!a) return null;
-  return o.items.find(r=>cleanArticle(r.article)===a)||null;
+  const scanned=cleanArticle(article);
+  if(!scanned) return null;
+  // exact match first
+  const exact=o.items.find(r=>cleanArticle(r.article)===scanned);
+  if(exact) return exact;
+  // substring match — find any item whose article number appears inside the scanned string
+  const sub=o.items.find(r=>{
+    const a=cleanArticle(r.article);
+    return a.length>=6 && scanned.includes(a);
+  });
+  if(sub) return sub;
+  // reverse — scanned string appears inside stored article (partial scan)
+  return o.items.find(r=>{
+    const a=cleanArticle(r.article);
+    return scanned.length>=6 && a.includes(scanned);
+  })||null;
 }
 
 function loadState(){try{const d=localStorage.getItem(DB);if(d)state=JSON.parse(d);}catch(e){}}

@@ -366,6 +366,7 @@ function handleFileUpload(e){
       const dC=findCol(['DESCRIPTION','DESC']);
       const cC=findCol(['COLOR']);
       const szC=findCol(['SIZE']);
+      const qC=findCol(['QUANTITY','QTY','UNITS','UNIT']);
 
       const items=[];const seen=new Set();
       raw.forEach((row,i)=>{
@@ -375,13 +376,16 @@ function handleFileUpload(e){
         const desc=String(row[dC]||'').trim();
         const color=String(row[cC]||'').trim();
         const size=String(row[szC]||'').trim();
+        // read qty from column — never parse size as qty
+        const qtyRaw=qC?parseInt(String(row[qC]||'').trim()):NaN;
+        const qty=(!isNaN(qtyRaw)&&qtyRaw>0)?qtyRaw:1;
         if(!article&&!style&&!stylecolor) return;
         const sku=style||stylecolor;
         const cs=norm((color+size).replace(/\s/g,''));
         const dk=article||(sku+'|'+cs);
         if(seen.has(dk)) return;
         seen.add(dk);
-        items.push({ln:i+1,loc:'',sku,cs,xref:desc,article,stylecolor,color,size,qty:1});
+        items.push({ln:i+1,loc:'',sku,cs,xref:desc,article,stylecolor,color,size,qty});
       });
       window._uploadedItems=items;
       const preview=items.slice(0,5).map(r=>`<tr><td style="padding:4px 8px;font-family:monospace;font-size:11px;color:var(--accent);">${r.article}</td><td style="padding:4px 8px;font-size:11px;">${r.sku}</td><td style="padding:4px 8px;font-size:11px;">${r.color} ${r.size}</td></tr>`).join('');

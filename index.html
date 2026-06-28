@@ -227,8 +227,9 @@ nav button.active{color:var(--text);border-bottom-color:var(--accent);}
   <div class="pane" id="pane-count">
     <div class="entry-area">
       <div class="entry-row">
-        <input class="ei" id="i-article" placeholder="SKU (Article Number)" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" inputmode="numeric"/>
-        <button class="scan-btn" onclick="openScanner()">&#9641; Scan</button>
+        <input class="ei" id="i-article" placeholder="SKU (Article Number)" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false"/>
+        <button class="scan-btn" onclick="openScanner()" style="background:var(--accent);">&#9641; Ring</button>
+        <button class="scan-btn" onclick="openCamera()">&#128247; Cam</button>
       </div>
       <div class="entry-row">
         <button class="add-btn" style="flex:1;" onclick="addCounted(null)">+ Add</button>
@@ -434,6 +435,7 @@ function showTab(tab){
   document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
   document.getElementById('pane-'+tab).classList.add('active');
   document.querySelectorAll('nav button')[tab==='pack'?0:1].classList.add('active');
+  if(tab==='count') setTimeout(()=>document.getElementById('i-article').focus(),100);
 }
 
 function setFilter(f,el){
@@ -582,8 +584,17 @@ function clearCounted(){
   if(confirm('Clear all counted items?')){state.orders[currentOrder].counted=[];saveState();renderDetail();}
 }
 
-/* SCANNER - html5-qrcode, works on iPhone Safari */
+/* SCANNER */
 function openScanner(){
+  if(html5QrScanner){try{html5QrScanner.stop().catch(()=>{});}catch(e){} html5QrScanner=null;}
+  document.getElementById('scanner-overlay').style.display='none';
+  const field=document.getElementById('i-article');
+  field.focus();
+  field.style.borderColor='var(--accent)';
+  setTimeout(()=>field.style.borderColor='',2000);
+}
+
+function openCamera(){
   document.getElementById('scanner-overlay').style.display='flex';
   if(html5QrScanner){
     try{html5QrScanner.stop().catch(()=>{});}catch(e){}
@@ -599,8 +610,8 @@ function openScanner(){
       addCounted(decodedText);
     },
     ()=>{}
-  ).catch(err=>{
-    document.querySelector('.scan-hint').textContent='Camera error — type article number below';
+  ).catch(()=>{
+    document.querySelector('.scan-hint').textContent='Camera error — use ring scanner instead';
   });
 }
 
